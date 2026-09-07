@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<title>لوحة تحكم بوت التوقعات</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root {
+    --bg: #0f1218; --card: #161b25; --fg: #e7ecf3; --muted: #8a93a5;
+    --acc: #4ea8ff; --green: #34c97b; --red: #ff5b6b; --amber: #f4b942;
+    --border: #232a36;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif; }
+  header { padding: 18px 22px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  header h1 { margin: 0; font-size: 18px; }
+  main { padding: 22px; max-width: 1100px; margin: 0 auto; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .card h2 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+  .card .val { font-size: 22px; font-weight: 600; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; margin-inline-start: 6px; }
+  .pill.ok { background: rgba(52,201,123,0.15); color: var(--green); }
+  .pill.bad { background: rgba(255,91,107,0.15); color: var(--red); }
+  .pill.warn { background: rgba(244,185,66,0.15); color: var(--amber); }
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: start; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  button { background: var(--acc); color: #001323; border: 0; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+  button:hover { filter: brightness(1.1); }
+  button.danger { background: var(--red); color: #fff; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+  input { background: #0c1019; color: var(--fg); border: 1px solid var(--border); padding: 6px 8px; border-radius: 6px; }
+  .muted { color: var(--muted); }
+  .row { display: flex; gap: 8px; align-items: center; }
+  a { color: var(--acc); text-decoration: none; }
+  pre { background: #0c1019; padding: 12px; border-radius: 6px; overflow: auto; max-height: 220px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚽ لوحة تحكم بوت التوقعات</h1>
+  <div id="last-refresh" class="muted"></div>
+</header>
+<main>
+  <section class="grid" id="status"></section>
+
+  <h3 style="margin-top:22px;">التحكم</h3>
+  <div class="actions">
+    <button id="btn-pause">⏸ إيقاف مؤقت</button>
+    <button id="btn-resume">▶ استئناف</button>
+    <button id="btn-trigger">🚀 تشغيل دورة نشر</button>
+    <button id="btn-track">📥 تتبع النتائج</button>
+    <div class="row">
+      <span>الحد الأدنى للثقة</span>
+      <input id="in-min" type="number" min="0" max="100" style="width:80px"/>
+      <button id="btn-set-min">حفظ</button>
+    </div>
+    <div class="row">
+      <span>أقصى عدد لكل دورة</span>
+      <input id="in-max" type="number" min="1" max="20" style="width:80px"/>
+      <button id="btn-set-max">حفظ</button>
+    </div>
+    <div class="row">
+      <span>فترة النشر (دقائق)</span>
+      <input id="in-interval" type="number" min="15" max="240" style="width:80px"/>
+      <button id="btn-set-interval">حفظ</button>
+    </div>
+  </div>
+
+  <h3>إحصائيات آخر 30 يوم</h3>
+  <table id="acc">
+    <thead><tr><th>السوق</th><th>النسبة</th><th>المحقق / الكل</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <h3 style="margin-top:22px;">أحدث التوقعات</h3>
+  <table id="preds">
+    <thead>
+      <tr>
+        <th>المباراة</th><th>الدوري</th><th>الثقة</th><th>الموعد</th><th>النتيجة</th><th>إجراء</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h3 style="margin-top:22px;">آخر الأخطاء</h3>
+  <pre id="errs"></pre>
+</main>
+<script>
+async function jget(url) { const r = await fetch(url); return r.json(); }
+async function jpost(url, body) { const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) }); return r.json(); }
+
+function pillStatus(paused, lastStatus) {
+  if (paused) return '<span class="pill bad">موقوف</span>';
+  if (lastStatus === 'ok') return '<span class="pill ok">يعمل</span>';
+  if (lastStatus === 'no-opportunities') return '<span class="pill warn">لا فرص</span>';
+  return '<span class="pill warn">—</span>';
+}
+
+async function refresh() {
+  const s = await jget('/api/status');
+  const acc = s.accuracy_30d || {};
+  const t = acc.totals || {};
+  const html = `
+    <div class="card"><h2>الحالة</h2><div class="val">${pillStatus(s.bot.paused, s.bot.last_publish_status)}</div></div>
+    <div class="card"><h2>منشورات اليوم</h2><div class="val">${s.bot.predictions_today}</div></div>
+    <div class="card"><h2>آخر نشر</h2><div class="val" style="font-size:14px;">${s.bot.last_publish || '—'}</div></div>
+    <div class="card"><h2>الحد الأدنى للثقة</h2><div class="val">${s.bot.min_confidence}</div></div>
+    <div class="card"><h2>أقصى عدد / دورة</h2><div class="val">${s.bot.max_per_cycle}</div></div>
+    <div class="card"><h2>فترة النشر</h2><div class="val">${s.bot.publish_interval_minutes} د</div></div>
+    <div class="card"><h2>المصادر</h2><div class="val" style="font-size:14px;">API-FB: ${s.bot.api_football ? '✅' : '❌'} • FD: ${s.bot.football_data ? '✅' : '❌'}</div></div>
+    <div class="card"><h2>القناة</h2><div class="val" style="font-size:14px;">${s.bot.channel_id || '—'}</div></div>
+  `;
+  document.getElementById('status').innerHTML = html;
+  document.getElementById('in-min').value = s.bot.min_confidence;
+  document.getElementById('in-max').value = s.bot.max_per_cycle;
+  document.getElementById('in-interval').value = s.bot.publish_interval_minutes;
+  const tbody = document.querySelector('#acc tbody');
+  tbody.innerHTML = `
+    <tr><td>نتيجة المباراة (1X2)</td><td>${t.one_x_two ? t.one_x_two.pct : 0}٪</td><td>${t.one_x_two ? t.one_x_two.hits : 0} / ${t.one_x_two ? t.one_x_two.total : 0}</td></tr>
+    <tr><td>كلا الفريقين يسجلان</td><td>${t.btts ? t.btts.pct : 0}٪</td><td>${t.btts ? t.btts.hits : 0} / ${t.btts ? t.btts.total : 0}</td></tr>
+    <tr><td>أكثر/أقل من 2.5</td><td>${t.over_under ? t.over_under.pct : 0}٪</td><td>${t.over_under ? t.over_under.hits : 0} / ${t.over_under ? t.over_under.total : 0}</td></tr>
+    <tr><td>النتيجة الصحيحة</td><td>${t.correct_score ? t.correct_score.pct : 0}٪</td><td>${t.correct_score ? t.correct_score.hits : 0} / ${t.correct_score ? t.correct_score.total : 0}</td></tr>
+  `;
+
+  const preds = await jget('/api/predictions?limit=20');
+  const ptbody = document.querySelector('#preds tbody');
+  ptbody.innerHTML = preds.predictions.map(p => {
+    const date = new Date(p.kickoff_ts * 1000).toISOString().slice(0, 16).replace('T', ' ');
+    return `<tr>
+      <td>${p.home_name} 🆚 ${p.away_name}</td>
+      <td>${p.league || ''}</td>
+      <td>${p.conf}</td>
+      <td>${date} UTC</td>
+      <td>${p.pred_1x2} (${p.correct_score})</td>
+      <td><button class="danger" data-id="${p.match_id}">حذف</button></td>
+    </tr>`;
+  }).join('');
+  ptbody.querySelectorAll('button').forEach(b => b.addEventListener('click', async (e) => {
+    if (!confirm('حذف التوقع؟')) return;
+    await fetch('/api/prediction/' + encodeURIComponent(b.dataset.id), { method: 'DELETE' });
+    refresh();
+  }));
+
+  document.getElementById('errs').textContent = (s.recent_errors || []).map(e => `[${e.ts}] ${e.scope} — ${e.message}`).join('\n') || 'لا توجد أخطاء.';
+  document.getElementById('last-refresh').textContent = 'آخر تحديث: ' + new Date().toLocaleTimeString();
+}
+
+document.getElementById('btn-pause').addEventListener('click', async () => { await jpost('/api/pause'); refresh(); });
+document.getElementById('btn-resume').addEventListener('click', async () => { await jpost('/api/resume'); refresh(); });
+document.getElementById('btn-trigger').addEventListener('click', async () => {
+  const r = await jpost('/api/trigger'); alert('تم: ' + JSON.stringify(r)); refresh();
+});
+document.getElementById('btn-track').addEventListener('click', async () => {
+  const r = await jpost('/api/track_results'); alert('تتبع: ' + JSON.stringify(r)); refresh();
+});
+document.getElementById('btn-set-min').addEventListener('click', async () => { await jpost('/api/set_min', { value: parseInt(document.getElementById('in-min').value, 10) }); refresh(); });
+document.getElementById('btn-set-max').addEventListener('click', async () => { await jpost('/api/set_max', { value: parseInt(document.getElementById('in-max').value, 10) }); refresh(); });
+document.getElementById('btn-set-interval').addEventListener('click', async () => { await jpost('/api/set_interval', { value: parseInt(document.getElementById('in-interval').value, 10) }); refresh(); });
+
+refresh(); setInterval(refresh, 15000);
+</script>
+</body>
+</html>
