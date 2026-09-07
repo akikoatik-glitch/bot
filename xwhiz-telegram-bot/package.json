@@ -1,0 +1,24 @@
+{
+  "name": "xwhiz-telegram-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Fully automatic Telegram football prediction bot (24/7) — Arabic posts, real data, statistical engine, accuracy tracking, admin dashboard.",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "analyze": "node src/cli/analyze.js",
+    "publish-one": "node src/cli/publish-one.js",
+    "track-results": "node src/cli/track-results.js",
+    "serve": "node src/web/server.js",
+    "test": "node test/smoke.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "node-cron": "^3.0.3"
+  },
+  "license": "MIT"
+}
