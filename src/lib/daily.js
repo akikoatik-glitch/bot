@@ -106,7 +106,7 @@ function addHHMM(hhmm, hours) {
 
 function fmtClock(epoch) {
   try {
-    return new Date(epoch * 1000).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', timeZone: config.tz });
+    return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: config.tz }).format(new Date(epoch * 1000));
   } catch (e) {
     return '—';
   }

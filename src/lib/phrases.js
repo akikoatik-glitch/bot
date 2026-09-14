@@ -5,9 +5,8 @@
 // claims like "مضمون" / "ربح مضمون"). Each group has many variations;
 // pick() rotates through them deterministically so consecutive posts differ.
 
-const AR_DIGITS = '٠١٢٣٤٥٦٧٨٩';
 function toArDigits(n) {
-  return String(n).replace(/[0-9]/g, c => AR_DIGITS[parseInt(c, 10)]);
+  return String(n);
 }
 
 // Deterministic rotation: same bucket always returns the same index *for a

@@ -15,9 +15,8 @@ const config = require('./config');
 const tz = require('./tz');
 const { pick } = require('./phrases');
 
-const AR_DIGITS = '٠١٢٣٤٥٦٧٨٩';
 function toArDigits(n) {
-  return String(n).replace(/[0-9]/g, c => AR_DIGITS[parseInt(c, 10)]);
+  return String(n);
 }
 
 function pct(p) {
@@ -36,7 +35,7 @@ function fmtTimeUTC(iso) {
 function fmtLocal(iso) {
   try {
     const d = new Date(iso);
-    return d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', timeZone: config.tz });
+    return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: config.tz }).format(d);
   } catch (e) { return fmtTimeUTC(iso); }
 }
 
@@ -199,11 +198,11 @@ function formatPrediction(opts) {
   // Goals
   lines.push('━━━━━━━━━━━━━━━━━━━━');
   lines.push('⚽ <b>الأهداف</b>');
-  lines.push(`🔥 أكثر من ٠٫٥ هدف: <b>${pct(result.over_under.over_0_5)}</b>`);
-  lines.push(`🔥 أكثر من ١٫٥ هدف: <b>${pct(result.over_under.over_1_5)}</b>`);
-  lines.push(`🔥 أكثر من ٢٫٥ هدف: <b>${pct(result.over_under.over_2_5)}</b>`);
-  lines.push(`🔥 أكثر من ٣٫٥ هدف: <b>${pct(result.over_under.over_3_5)}</b>`);
-  lines.push(`⬇️ أقل من ٢٫٥ هدف: <b>${pct(result.over_under.under_2_5)}</b>`);
+  lines.push(`🔥 أكثر من 0.5 هدف: <b>${pct(result.over_under.over_0_5)}</b>`);
+  lines.push(`🔥 أكثر من 1.5 هدف: <b>${pct(result.over_under.over_1_5)}</b>`);
+  lines.push(`🔥 أكثر من 2.5 هدف: <b>${pct(result.over_under.over_2_5)}</b>`);
+  lines.push(`🔥 أكثر من 3.5 هدف: <b>${pct(result.over_under.over_3_5)}</b>`);
+  lines.push(`⬇️ أقل من 2.5 هدف: <b>${pct(result.over_under.under_2_5)}</b>`);
   lines.push(`⚽ كلا الفريقين يسجلان: <b>${pct(result.btts.yes)}</b>`);
   lines.push(`🚫 كلا الفريقين لا يسجلان: <b>${pct(result.btts.no)}</b>`);
   lines.push('');
