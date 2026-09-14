@@ -1,0 +1,13 @@
+node_modules/
+data/
+logs/
+public/predictions/
+public/sitemap.xml
+.env
+.env.local
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+npm-debug.log*
+.DS_Store
