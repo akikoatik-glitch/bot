@@ -262,18 +262,16 @@ const fakeSender = async (chatId, text, opts) => {
 (async () => {
   const r1 = await results.trackMissing({ sender: fakeSender, skipRefresh: true });
   assert(r1.recorded === 2, 'both results recorded, got ' + r1.recorded);
-  // New behaviour: BOTH win and loss get follow-up replies
-  assert(sent.length === 2, 'exactly two follow-up replies (win + loss), got ' + sent.length);
+  // New behaviour: ONLY wins get a follow-up reply; losses are silent
+  assert(sent.length === 1, 'only one follow-up reply (win), got ' + sent.length);
 
   // Win reply
   assert(sent[0].opts && sent[0].opts.replyToMessageId === 777, 'win reply targets winning prediction');
   assert(sent[0].text.includes('أكثر من 2.5 هدف'), 'win reply mentions the best bet');
   assert(/🔥|💰|🎯|✅/.test(sent[0].text), 'win reply has celebration emoji');
 
-  // Loss reply
-  assert(sent[1].opts && sent[1].opts.replyToMessageId === 778, 'loss reply targets losing prediction');
-  assert(sent[1].text.includes('أكثر من 2.5 هدف'), 'loss reply mentions the best bet');
-  assert(/❌|🤝|💪/.test(sent[1].text), 'loss reply has acknowledgement emoji');
+  // Loss is silent — but still recorded for stats
+  assert(!sent.some(x => x.opts && x.opts.replyToMessageId === 778), 'no loss reply is posted');
 
   const wrow = db.db().prepare('SELECT outcome_best_correct FROM results WHERE match_id=?').get(wid);
   assert(wrow && wrow.outcome_best_correct === 1, 'win result stored as correct');
@@ -284,7 +282,7 @@ const fakeSender = async (chatId, text, opts) => {
   const wp = db.getPredictionByMatch(wid);
   const lp = db.getPredictionByMatch(lid);
   assert(wp && wp.result_state === 'correct', 'winning prediction marked result_state=correct');
-  assert(lp && lp.result_state === 'wrong', 'losing prediction marked result_state=wrong');
+  assert(lp && lp.result_state === null, 'losing prediction has no result_state (no reply sent)');
 
   const r2 = await results.trackMissing({ sender: fakeSender, skipRefresh: true });
   assert(r2.recorded === 0 && r2.celebrated === 0 && r2.followed === 0, 'no duplicate replies on second run');

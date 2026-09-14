@@ -152,38 +152,32 @@ async function trackMissing({ sender, skipRefresh } = {}) {
     });
     recorded++;
 
-    // Follow up on the outcome — win or loss. Void markets (e.g. DNB draw)
-    // and missed half-time markets produce a null best outcome: skip reply.
+    // Follow up ONLY on wins. Losses (and void markets) are recorded
+    // silently — the channel never hears about them.
     const won = out.outBest === 1 || (out.outBest == null && p.best_bet_key == null && out.out1x2 === 1);
     const lost = out.outBest === 0 || (out.outBest == null && p.best_bet_key == null && out.out1x2 === 0);
-    if (!won && !lost) continue;
+    if (!won) continue;
 
-    if (recorded > 0 && celebrated + followed >= MAX_REPLIES_PER_RUN) continue;
+    if (celebrated >= MAX_REPLIES_PER_RUN) continue;
     if (p.channel_message_id == null) continue;
     if (!config.telegram.channelId) {
       log.warn('followup.skipped', { match_id: p.match_id, reason: 'no_channel' });
       continue;
     }
     if (config.safety.dryRun) {
-      log.info('followup.dry_run', { match_id: p.match_id, kind: won ? 'win' : 'loss' });
+      log.info('followup.dry_run', { match_id: p.match_id });
       continue; // don't mark — a later live run should still post
     }
     try {
-      const text = won ? winReplyText(p, seedFor(p)) : lossReplyText(p, seedFor(p));
+      const text = winReplyText(p, seedFor(p));
       const msg = await send(config.telegram.channelId, text, {
         replyToMessageId: p.channel_message_id,
         disable_web_page_preview: true,
       });
-      if (won) {
-        db.markCelebrated(p.id, msg && msg.message_id ? msg.message_id : -1);
-        db.setPredictionResultState(p.match_id, 'correct');
-        celebrated++;
-      } else {
-        db.markFollowupSent(p.id, msg && msg.message_id ? msg.message_id : -1);
-        db.setPredictionResultState(p.match_id, 'wrong');
-        followed++;
-      }
-      log.info('results.followup.ok', { match_id: p.match_id, kind: won ? 'win' : 'loss' });
+      db.markCelebrated(p.id, msg && msg.message_id ? msg.message_id : -1);
+      db.setPredictionResultState(p.match_id, 'correct');
+      celebrated++;
+      log.info('results.followup.ok', { match_id: p.match_id, kind: 'win' });
     } catch (e) {
       log.warn('results.followup.failed', { match_id: p.match_id, err: e.message });
     }
