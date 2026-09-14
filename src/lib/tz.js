@@ -4,7 +4,7 @@
 // All epoch math is TZ-agnostic; these are only needed for:
 //   • Displaying local times in Arabic
 //   • Deciding "is it morning?" / "is it evening?" boundaries
-//   • Computing kickoff − PREDICT_HOURS_BEFORE in wall-clock terms
+//   • Computing kickoff − PREDICT_MINUTES_BEFORE in wall-clock terms
 
 const config = require('./config');
 

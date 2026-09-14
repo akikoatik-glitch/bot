@@ -119,7 +119,7 @@ const config = {
   daily: {
     greetingTime: optional('MORNING_GREETING_TIME', '08:30'),
     summaryTime: optional('DAILY_SUMMARY_TIME', '23:30'),
-    predictHoursBefore: intOpt('PREDICT_HOURS_BEFORE', 3),
+    predictMinutesBefore: intOpt('PREDICT_MINUTES_BEFORE', 30),
     maxPredictionsPerDay: intOpt('MAX_PREDICTIONS_PER_DAY', 8),
     minPredictionsPerDay: intOpt('MIN_PREDICTIONS_PER_DAY', 2),
     planWindowDays: intOpt('PLAN_WINDOW_DAYS', 2),     // today + tomorrow

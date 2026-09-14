@@ -27,7 +27,6 @@ const agg = require('../sources/aggregator');
 const { formatCompactPrediction } = require('./formatter');
 const { pick, toArDigits } = require('./phrases');
 const results = require('./results');
-const images = require('./images');
 const { gatherContextForMatch } = require('../publish');
 const { collectRecentForPublish } = require('./aggregator2');
 
@@ -163,7 +162,7 @@ async function planDay({ recentOverride, force } = {}) {
   const allRecent = recentOverride || await collectRecentForPublish(7);
   const recentKeys = (db.recentBestBetKeys ? db.recentBestBetKeys(10) : []) || [];
   const bestFloor = (config.daily && config.daily.confGood) || 70;
-  const hoursBefore = (config.daily && config.daily.predictHoursBefore) || 3;
+  const minutesBefore = (config.daily && config.daily.predictMinutesBefore) || 30;
   const maxPerDay = (config.daily && config.daily.maxPredictionsPerDay) || 8;
 
   const planned = [];
@@ -178,7 +177,7 @@ async function planDay({ recentOverride, force } = {}) {
       if (!bb || bb.prob == null || bb.prob < bestFloor) continue;
 
       const kickoffTs = m.kickoff_ts || Math.floor(new Date(m.utc_date).getTime() / 1000);
-      const schedTs = tz.publishAtEpoch(kickoffTs, hoursBefore);
+      const schedTs = tz.publishAtEpoch(kickoffTs, minutesBefore / 60);
       // Never plan a post for a time that has already passed.
       if (schedTs <= now) continue;
 
@@ -247,10 +246,9 @@ function reconstructResult(p) {
   };
 }
 
-// Posts any planned prediction whose time has come. Compact best-market post.
-// Club crests (best-effort): both → 2-photo media group + text; one →
-// photo with the text as caption; none → text-only. Never blocks posting.
-async function publishDue({ sender, getCrests } = {}) {
+// Posts any planned prediction whose time has come. Compact best-market post,
+// published 30 minutes before kickoff. Text-only.
+async function publishDue({ sender } = {}) {
   if (isPaused()) return { published: 0, reason: 'paused' };
   const lookahead = (config.daily && config.daily.dueLookaheadSeconds) || 300;
   const due = db.listPlannedDueSoon({ withinSeconds: lookahead, limit: 20 });
@@ -274,36 +272,10 @@ async function publishDue({ sender, getCrests } = {}) {
       continue;
     }
     try {
-      let msg = null;
-      let mediaSent = false;
-      // Only the real Telegram sender is used for photo uploads; injected
-      // senders (tests) keep the plain text path.
-      if (!sender) {
-        const f = (typeof getCrests === 'function') ? getCrests : images.getTeamCrests;
-        try {
-          const crests = await f([p.home_name, p.away_name]);
-          if (crests) {
-            const valid = crests.filter(Boolean).slice(0, 2);
-            if (valid.length === 2) {
-              await tg.sendMediaGroup(config.telegram.channelId, valid, { throttle: true });
-              mediaSent = true;
-            } else if (valid.length === 1) {
-              msg = await tg.sendPhoto(config.telegram.channelId, valid[0], {
-                caption: text,
-                disable_web_page_preview: true,
-              });
-            }
-          }
-        } catch (e) {
-          log.warn('daily.publish.crest.failed', { id: p.match_id, err: e.message });
-        }
-      }
-      if (!msg && !mediaSent) {
-        msg = await send(config.telegram.channelId, text, { disable_web_page_preview: true });
-      }
+      const msg = await send(config.telegram.channelId, text, { disable_web_page_preview: true });
       db.markPredictionPublished(p.match_id, msg && msg.message_id ? msg.message_id : null);
       published++;
-      log.info('daily.publish.ok', { id: p.match_id, key: p.best_bet_key, prob: p.best_bet_prob, conf: p.conf, media: mediaSent || (msg && msg.message_id) });
+      log.info('daily.publish.ok', { id: p.match_id, key: p.best_bet_key, prob: p.best_bet_prob, conf: p.conf });
       await new Promise(r => setTimeout(r, 1500));
     } catch (e) {
       db.logError('publish', `publish failed for ${p.match_id}`, e.stack || e.message);
