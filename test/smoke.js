@@ -342,9 +342,9 @@ const fakeSender = async (chatId, text, opts) => {
 
   const sm = await daily.dailySummary({ sender: fk, force: true });
   assert(sm.sent === true, 'forced daily summary sent');
-  const smMsg = sent2.find(x => x.text.includes('نسبة النجاح'));
+  const smMsg = sent2.find(x => x.text.includes('رابحة'));
   assert(smMsg && /✅/.test(smMsg.text), 'summary reports win count');
-  assert(smMsg && /❌/.test(smMsg.text), 'summary reports loss count');
+  assert(smMsg && !/❌/.test(smMsg.text), 'summary hides losses');
 
   console.log(failed === 0 ? '\n✅ All smoke checks passed.' : `\n❌ ${failed} check(s) failed.`);
   process.exit(failed === 0 ? 0 : 1);

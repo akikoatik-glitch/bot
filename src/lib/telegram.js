@@ -37,16 +37,18 @@ async function rateWait(chatId) {
 async function call(method, params, opts = {}) {
   const url = `${BASE}/${method}`;
   const maxRetries = opts.retries != null ? opts.retries : 4;
+  const isForm = typeof FormData !== 'undefined' && params instanceof FormData;
+  const chatIdForWait = isForm ? (params.get('chat_id') || undefined) : (params && params.chat_id);
   let lastErr;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (opts.throttle !== false) {
-      await rateWait(params && params.chat_id);
+      await rateWait(chatIdForWait);
     }
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(params),
+        headers: isForm ? {} : { 'content-type': 'application/json' },
+        body: isForm ? params : JSON.stringify(params),
       });
       if (res.status === 429) {
         const j = await res.json().catch(() => ({}));
@@ -94,6 +96,43 @@ async function sendMessage(chatId, text, opts = {}) {
   return call('sendMessage', params, { throttle: opts.throttle });
 }
 
+// Upload-based senders (multipart/form-data, no extra deps — Node built-in
+// FormData/Blob). Used for club-crest images attached to prediction posts.
+function photoExt(mime) {
+  const m = (mime || '').toLowerCase();
+  if (m.includes('png')) return 'png';
+  if (m.includes('webp')) return 'webp';
+  return 'jpg';
+}
+
+async function sendPhoto(chatId, image, opts = {}) {
+  const form = new FormData();
+  form.append('chat_id', String(chatId));
+  const mime = image.mime || 'image/jpeg';
+  form.append('photo', new Blob([image.buffer], { type: mime }), 'crest.' + photoExt(mime));
+  if (opts.caption) {
+    form.append('caption', opts.caption);
+    form.append('parse_mode', opts.parse_mode || config.telegram.parseMode);
+  }
+  if (opts.disable_web_page_preview != null) form.append('disable_web_page_preview', String(opts.disable_web_page_preview));
+  if (opts.replyToMessageId != null) form.append('reply_to_message_id', String(opts.replyToMessageId));
+  return call('sendPhoto', form, { throttle: opts.throttle });
+}
+
+async function sendMediaGroup(chatId, images, opts = {}) {
+  const form = new FormData();
+  form.append('chat_id', String(chatId));
+  const media = [];
+  (images || []).forEach((image, i) => {
+    const name = 'crest' + i;
+    const mime = image.mime || 'image/jpeg';
+    form.append(name, new Blob([image.buffer], { type: mime }), name + '.' + photoExt(mime));
+    media.push({ type: 'photo', media: 'attach://' + name });
+  });
+  form.append('media', JSON.stringify(media));
+  return call('sendMediaGroup', form, { throttle: opts.throttle });
+}
+
 async function editMessageText(chatId, messageId, text, opts = {}) {
   return call('editMessageText', {
     chat_id: chatId,
@@ -130,7 +169,7 @@ function isAdmin(userId) {
 }
 
 module.exports = {
-  call, sendMessage, editMessageText, deleteMessage,
+  call, sendMessage, sendPhoto, sendMediaGroup, editMessageText, deleteMessage,
   getUpdates, getMe, getChat, getChatMember, sendChatAction,
   isAdmin,
 };

@@ -27,6 +27,7 @@ const agg = require('../sources/aggregator');
 const { formatCompactPrediction } = require('./formatter');
 const { pick, toArDigits } = require('./phrases');
 const results = require('./results');
+const images = require('./images');
 const { gatherContextForMatch } = require('../publish');
 const { collectRecentForPublish } = require('./aggregator2');
 
@@ -247,7 +248,9 @@ function reconstructResult(p) {
 }
 
 // Posts any planned prediction whose time has come. Compact best-market post.
-async function publishDue({ sender } = {}) {
+// Club crests (best-effort): both → 2-photo media group + text; one →
+// photo with the text as caption; none → text-only. Never blocks posting.
+async function publishDue({ sender, getCrests } = {}) {
   if (isPaused()) return { published: 0, reason: 'paused' };
   const lookahead = (config.daily && config.daily.dueLookaheadSeconds) || 300;
   const due = db.listPlannedDueSoon({ withinSeconds: lookahead, limit: 20 });
@@ -271,10 +274,36 @@ async function publishDue({ sender } = {}) {
       continue;
     }
     try {
-      const msg = await send(config.telegram.channelId, text, { disable_web_page_preview: true });
+      let msg = null;
+      let mediaSent = false;
+      // Only the real Telegram sender is used for photo uploads; injected
+      // senders (tests) keep the plain text path.
+      if (!sender) {
+        const f = (typeof getCrests === 'function') ? getCrests : images.getTeamCrests;
+        try {
+          const crests = await f([p.home_name, p.away_name]);
+          if (crests) {
+            const valid = crests.filter(Boolean).slice(0, 2);
+            if (valid.length === 2) {
+              await tg.sendMediaGroup(config.telegram.channelId, valid, { throttle: true });
+              mediaSent = true;
+            } else if (valid.length === 1) {
+              msg = await tg.sendPhoto(config.telegram.channelId, valid[0], {
+                caption: text,
+                disable_web_page_preview: true,
+              });
+            }
+          }
+        } catch (e) {
+          log.warn('daily.publish.crest.failed', { id: p.match_id, err: e.message });
+        }
+      }
+      if (!msg && !mediaSent) {
+        msg = await send(config.telegram.channelId, text, { disable_web_page_preview: true });
+      }
       db.markPredictionPublished(p.match_id, msg && msg.message_id ? msg.message_id : null);
       published++;
-      log.info('daily.publish.ok', { id: p.match_id, key: p.best_bet_key, prob: p.best_bet_prob, conf: p.conf });
+      log.info('daily.publish.ok', { id: p.match_id, key: p.best_bet_key, prob: p.best_bet_prob, conf: p.conf, media: mediaSent || (msg && msg.message_id) });
       await new Promise(r => setTimeout(r, 1500));
     } catch (e) {
       db.logError('publish', `publish failed for ${p.match_id}`, e.stack || e.message);
@@ -320,8 +349,7 @@ async function dailySummary({ sender, force } = {}) {
   lines.push('');
   if (stats.total) {
     lines.push(`توقعات منشورة اليوم: <b>${toArDigits(stats.total)}</b>`);
-    lines.push(`✅ رابحة: <b>${toArDigits(stats.wins)}</b>  •  ❌ خاسرة: <b>${toArDigits(stats.losses)}</b>`);
-    lines.push(`🎯 نسبة النجاح: <b>${toArDigits(stats.total ? Math.round((stats.wins / stats.total) * 100) : 0)}٪</b>`);
+    lines.push(`✅ رابحة اليوم: <b>${toArDigits(stats.wins)}</b>`);
     lines.push('');
     lines.push(verdictText);
     lines.push('');
