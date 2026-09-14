@@ -64,7 +64,7 @@ async function greetingIfNeeded({ sender, force } = {}) {
   const planned = db.listPlanned({ fromScheduledTs: fromSched, toScheduledTs: toSched, limit: config.daily.maxPredictionsPerDay });
 
   const lines = [];
-  lines.push(`⚽ ${pick('MORNING_GREETINGS', seed)}`);
+  lines.push(pick('MORNING_GREETINGS', seed));
   lines.push('');
   if (planned.length) {
     lines.push('<b>توقعات النهار:</b>');
@@ -76,7 +76,7 @@ async function greetingIfNeeded({ sender, force } = {}) {
     lines.push('لم نجد اليوم مباريات قوية تستحق النشر، نتابع ونوافيكم عند توفر فرص حقيقية 📊');
   }
   lines.push('');
-  lines.push('نبدأ النشر قبل كل مباراة بثلاث ساعات، كونوا في الموعد 👀');
+  lines.push(pick('GREETING_CLOSINGS', seed));
   const text = lines.join('\n');
 
   const send = sender || tg.sendMessage;
@@ -162,7 +162,7 @@ async function planDay({ recentOverride, force } = {}) {
   const allRecent = recentOverride || await collectRecentForPublish(7);
   const recentKeys = (db.recentBestBetKeys ? db.recentBestBetKeys(10) : []) || [];
   const bestFloor = (config.daily && config.daily.confGood) || 70;
-  const minutesBefore = (config.daily && config.daily.predictMinutesBefore) || 30;
+  const hoursBefore = (config.daily && config.daily.predictHoursBefore) || 3;
   const maxPerDay = (config.daily && config.daily.maxPredictionsPerDay) || 8;
 
   const planned = [];
@@ -177,7 +177,7 @@ async function planDay({ recentOverride, force } = {}) {
       if (!bb || bb.prob == null || bb.prob < bestFloor) continue;
 
       const kickoffTs = m.kickoff_ts || Math.floor(new Date(m.utc_date).getTime() / 1000);
-      const schedTs = tz.publishAtEpoch(kickoffTs, minutesBefore / 60);
+      const schedTs = tz.publishAtEpoch(kickoffTs, hoursBefore);
       // Never plan a post for a time that has already passed.
       if (schedTs <= now) continue;
 
@@ -272,6 +272,14 @@ async function publishDue({ sender } = {}) {
       continue;
     }
     try {
+      // Occasionally talk to the audience before a pick (real channel only —
+      // injected senders keep the clean test path). ~1 in 3 picks gets a teaser.
+      if (!sender && seed % 3 === 0) {
+        try {
+          await send(config.telegram.channelId, pick('PICK_TEASERS', seed), { disable_web_page_preview: true });
+          await new Promise(r => setTimeout(r, 2500));
+        } catch (_) { /* teaser is optional */ }
+      }
       const msg = await send(config.telegram.channelId, text, { disable_web_page_preview: true });
       db.markPredictionPublished(p.match_id, msg && msg.message_id ? msg.message_id : null);
       published++;
@@ -320,12 +328,16 @@ async function dailySummary({ sender, force } = {}) {
   lines.push(`📊 ${pick('EVENING_SUMMARIES', seed)}`);
   lines.push('');
   if (stats.total) {
+    const pct = Math.round((stats.wins / stats.total) * 100);
     lines.push(`توقعات منشورة اليوم: <b>${toArDigits(stats.total)}</b>`);
-    lines.push(`✅ رابحة اليوم: <b>${toArDigits(stats.wins)}</b>`);
+    lines.push(`✅ صحيحة: <b>${toArDigits(stats.wins)}</b>`);
+    lines.push(`❌ خاطئة: <b>${toArDigits(stats.losses)}</b>`);
+    lines.push(`🔥 نسبة النجاح: <b>${toArDigits(Number.isFinite(pct) ? pct : 0)}%</b>`);
     lines.push('');
     lines.push(verdictText);
     lines.push('');
-    lines.push('غداً نلتقي بك في توقعات جديدة ⚽');
+    lines.push('شكراً لكل من تابعنا اليوم ❤️⚽');
+    lines.push('نلتقي غداً مع توقعات جديدة 🔥💰');
   } else {
     lines.push(verdictText);
   }

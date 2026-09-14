@@ -8,6 +8,7 @@
 //   • Post a HUMAN-LIKE follow-up reply after every published prediction that
 //     finished — correct ones are celebrated, wrong ones acknowledged openly —
 //     so the channel looks like a real admin who reports results honestly.
+//     Void markets (e.g. a draw in a draw-no-bet pick) stay silent.
 
 const log = require('./logger');
 const db = require('./db');
@@ -93,7 +94,7 @@ function computeOutcomes(p, m) {
 }
 
 // Human-ish Arabic reply for a CORRECT prediction.
-function winReplyText(p, seed) {
+function winReplyText(p, seed, out) {
   const lines = [];
   if (p.best_bet_label) {
     lines.push(`${pick('WIN_REPLIES', seed)} ✅`);
@@ -102,15 +103,21 @@ function winReplyText(p, seed) {
     lines.push(pick('WIN_REPLIES', seed));
     lines.push('توقعنا صدق 🎯');
   }
+  if (out && Number.isFinite(out.sh) && Number.isFinite(out.sa)) {
+    lines.push(`النتيجة النهائية: <b>${toArDigits(out.sh)} - ${toArDigits(out.sa)}</b> ⚽`);
+  }
   return lines.join('\n');
 }
 
 // Human-ish Arabic reply for a WRONG prediction (honest, not deleted).
-function lossReplyText(p, seed) {
+function lossReplyText(p, seed, out) {
   const lines = [];
   lines.push(pick('LOSS_REPLIES', seed));
   if (p.best_bet_label) {
     lines.push(`توقعنا كان: <i>${escapeHtml(p.best_bet_label)}</i>`);
+  }
+  if (out && Number.isFinite(out.sh) && Number.isFinite(out.sa)) {
+    lines.push(`النتيجة النهائية: <b>${toArDigits(out.sh)} - ${toArDigits(out.sa)}</b> ⚽`);
   }
   return lines.join('\n');
 }
@@ -152,13 +159,14 @@ async function trackMissing({ sender, skipRefresh } = {}) {
     });
     recorded++;
 
-    // Follow up ONLY on wins. Losses (and void markets) are recorded
-    // silently — the channel never hears about them.
+    // Post a follow-up reply for EVERY settled prediction: wins are
+    // celebrated, losses are acknowledged openly, void markets stay silent.
     const won = out.outBest === 1 || (out.outBest == null && p.best_bet_key == null && out.out1x2 === 1);
     const lost = out.outBest === 0 || (out.outBest == null && p.best_bet_key == null && out.out1x2 === 0);
-    if (!won) continue;
+    const isVoid = !won && !lost;
+    if (isVoid) continue;
 
-    if (celebrated >= MAX_REPLIES_PER_RUN) continue;
+    if (celebrated + followed >= MAX_REPLIES_PER_RUN) continue;
     if (p.channel_message_id == null) continue;
     if (!config.telegram.channelId) {
       log.warn('followup.skipped', { match_id: p.match_id, reason: 'no_channel' });
@@ -169,15 +177,23 @@ async function trackMissing({ sender, skipRefresh } = {}) {
       continue; // don't mark — a later live run should still post
     }
     try {
-      const text = winReplyText(p, seedFor(p));
+      const text = won ? winReplyText(p, seedFor(p), out) : lossReplyText(p, seedFor(p), out);
       const msg = await send(config.telegram.channelId, text, {
         replyToMessageId: p.channel_message_id,
         disable_web_page_preview: true,
       });
-      db.markCelebrated(p.id, msg && msg.message_id ? msg.message_id : -1);
-      db.setPredictionResultState(p.match_id, 'correct');
-      celebrated++;
-      log.info('results.followup.ok', { match_id: p.match_id, kind: 'win' });
+      const mid = msg && msg.message_id ? msg.message_id : -1;
+      if (won) {
+        db.markCelebrated(p.id, mid);
+        db.setPredictionResultState(p.match_id, 'correct');
+        celebrated++;
+        log.info('results.followup.ok', { match_id: p.match_id, kind: 'win' });
+      } else {
+        db.markFollowupSent(p.id, mid);
+        db.setPredictionResultState(p.match_id, 'wrong');
+        followed++;
+        log.info('results.followup.ok', { match_id: p.match_id, kind: 'loss' });
+      }
     } catch (e) {
       log.warn('results.followup.failed', { match_id: p.match_id, err: e.message });
     }

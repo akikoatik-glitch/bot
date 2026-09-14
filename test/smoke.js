@@ -262,16 +262,20 @@ const fakeSender = async (chatId, text, opts) => {
 (async () => {
   const r1 = await results.trackMissing({ sender: fakeSender, skipRefresh: true });
   assert(r1.recorded === 2, 'both results recorded, got ' + r1.recorded);
-  // New behaviour: ONLY wins get a follow-up reply; losses are silent
-  assert(sent.length === 1, 'only one follow-up reply (win), got ' + sent.length);
+  // Both win AND loss get a follow-up reply (transparent), so expect 2 sends.
+  assert(sent.length === 2, 'one win + one loss reply posted, got ' + sent.length);
 
   // Win reply
-  assert(sent[0].opts && sent[0].opts.replyToMessageId === 777, 'win reply targets winning prediction');
-  assert(sent[0].text.includes('أكثر من 2.5 هدف'), 'win reply mentions the best bet');
-  assert(/🔥|💰|🎯|✅/.test(sent[0].text), 'win reply has celebration emoji');
+  const winMsg = sent.find(x => x.opts && x.opts.replyToMessageId === 777);
+  assert(!!winMsg, 'win reply targets winning prediction');
+  assert(winMsg.text.includes('أكثر من 2.5 هدف'), 'win reply mentions the best bet');
+  assert(/🔥|💰|🎯|✅/.test(winMsg.text), 'win reply has celebration emoji');
 
-  // Loss is silent — but still recorded for stats
-  assert(!sent.some(x => x.opts && x.opts.replyToMessageId === 778), 'no loss reply is posted');
+  // Loss reply is posted too, acknowledging the miss honestly
+  const lossMsg = sent.find(x => x.opts && x.opts.replyToMessageId === 778);
+  assert(!!lossMsg, 'loss reply is posted');
+  assert(lossMsg.text.includes('توقعنا'), 'loss reply talks about our prediction');
+  assert(/0 - 0/.test(lossMsg.text), 'loss reply shows the final score');
 
   const wrow = db.db().prepare('SELECT outcome_best_correct FROM results WHERE match_id=?').get(wid);
   assert(wrow && wrow.outcome_best_correct === 1, 'win result stored as correct');
@@ -282,7 +286,7 @@ const fakeSender = async (chatId, text, opts) => {
   const wp = db.getPredictionByMatch(wid);
   const lp = db.getPredictionByMatch(lid);
   assert(wp && wp.result_state === 'correct', 'winning prediction marked result_state=correct');
-  assert(lp && lp.result_state === null, 'losing prediction has no result_state (no reply sent)');
+  assert(lp && lp.result_state === 'wrong', 'losing prediction marked result_state=wrong');
 
   const r2 = await results.trackMissing({ sender: fakeSender, skipRefresh: true });
   assert(r2.recorded === 0 && r2.celebrated === 0 && r2.followed === 0, 'no duplicate replies on second run');
@@ -342,9 +346,11 @@ const fakeSender = async (chatId, text, opts) => {
 
   const sm = await daily.dailySummary({ sender: fk, force: true });
   assert(sm.sent === true, 'forced daily summary sent');
-  const smMsg = sent2.find(x => x.text.includes('رابحة'));
-  assert(smMsg && /✅/.test(smMsg.text), 'summary reports win count');
-  assert(smMsg && !/❌/.test(smMsg.text), 'summary hides losses');
+  const smMsg = sent2.find(x => x.text.includes('نسبة النجاح'));
+  assert(smMsg, 'summary reports win rate');
+  assert(smMsg && /✅/.test(smMsg.text), 'summary reports correct count');
+  assert(smMsg && /❌/.test(smMsg.text), 'summary reports wrong count');
+  assert(smMsg && /%/.test(smMsg.text), 'summary shows the percentage');
 
   console.log(failed === 0 ? '\n✅ All smoke checks passed.' : `\n❌ ${failed} check(s) failed.`);
   process.exit(failed === 0 ? 0 : 1);

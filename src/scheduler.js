@@ -30,7 +30,7 @@ function start() {
     tz: config.tz,
     greeting: config.daily.greetingTime,
     summary: config.daily.summaryTime,
-    minutesBefore: config.daily.predictMinutesBefore,
+    hoursBefore: config.daily.predictHoursBefore,
     confGood: config.daily.confGood,
   });
 
