@@ -10,4 +10,5 @@ public/sitemap.xml
 *.sqlite-wal
 *.sqlite-shm
 npm-debug.log*
+start_bot.cmd
 .DS_Store
