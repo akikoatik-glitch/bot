@@ -1,0 +1,10 @@
+node_modules
+logs
+data
+public/predictions
+*.log
+.git
+.env
+.env.local
+.env.*
+!railway.json
